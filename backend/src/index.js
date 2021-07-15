@@ -1,49 +1,52 @@
 import express from "express"
-import expressValidator from "express-validator"
+import {
+  keccak,
+  fromRpcSig,
+  ecrecover,
+  toBuffer,
+  bufferToHex,
+  pubToAddress,
+} from "ethereumjs-util"
 import cors from "cors"
-import etherUtil from "ethereumjs-util"
-import dotenv from "dotenv-safe"
-
-import { errorResponse, successResponse } from "./utils"
-
-dotenv.config({ silent: true })
+import jwt from "jsonwebtoken"
 
 const app = express()
 const port = 3000
 
-app.use(express.json())
-app.use(express.urlencoded({ extended: false }))
-app.use(expressValidator())
 app.use(cors())
+app.use(express.json())
 
 app.get("/token", (req, res) => {
   let nonce = Math.floor(Math.random() * 1000000).toString() // in a real life scenario we would random this after each login and fetch it from the db as well
-  return successResponse(res, nonce)
+  return res.send(nonce)
 })
 app.post("/auth", (req, res) => {
   const { address, signature, nonce } = req.body
 
   // TODO: Validate signature by using eth tools (tip: ethereumjs-util and eth-sig-util)
+  const nonceLen = nonce.toString().length
 
-  try {
-    const signedMessage = Buffer.from(
-      `\x19Ethereum Signed Message:\n${nonce.toString().length}${nonce}`
-    )
-    const hashedMessage = etherUtil.keccak(signedMessage)
-    const { v, r, s } = etherUtil.fromRpcSig(signature)
-    const prefixedMessage = etherUtil.toBuffer(hashedMessage)
-    const publicKey = etherUtil.ecrecover(prefixedMessage, v, r, s)
-    const publicKeyAddress = etherUtil.pubToAddress(publicKey)
-    const recoveredAddress = etherUtil.bufferToHex(publicKeyAddress)
+  //Adds prefix to the message, makes the calculated signature recognisable as an Ethereum specific signature
+  const prefixedMsg = keccak(
+    Buffer.from(`\x19Ethereum Signed Message:\n${nonceLen}${nonce}`)
+  )
+  //Destructure signature into 3 variables
+  const { v, r, s } = fromRpcSig(signature)
+  //Sends the message and the signature to the network and recover the account
+  const publicKey = ecrecover(toBuffer(prefixedMsg), v, r, s)
+  //Converts the buffer stream to hexadecimal
+  const recoveredAddress = bufferToHex(pubToAddress(publicKey))
 
-    if (recoveredAddress !== address) {
-      return errorResponse(res, 401)
-    }
-
-    return successResponse(res, "Hello world")
-  } catch (err) {
-    throw err.message
+  if (recoveredAddress !== address) {
+    return res.status(401).send()
   }
+
+  console.log(signature)
+
+  const secret = "your secret in .env"
+  const token = jwt.sign(recoveredAddress, secret)
+
+  return res.send(token)
 })
 
 app.listen(port, () => {

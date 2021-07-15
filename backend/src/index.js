@@ -24,24 +24,22 @@ app.post("/auth", (req, res) => {
   const { address, signature, nonce } = req.body
 
   // TODO: Validate signature by using eth tools (tip: ethereumjs-util and eth-sig-util)
-  const nonceLen = nonce.toString().length
+  const nonceLength = nonce.toString().length
 
   //Adds prefix to the message, makes the calculated signature recognisable as an Ethereum specific signature
-  const prefixedMsg = keccak(
-    Buffer.from(`\x19Ethereum Signed Message:\n${nonceLen}${nonce}`)
+  const prefixedMessage = keccak(
+    Buffer.from(`\x19Ethereum Signed Message:\n${nonceLength}${nonce}`)
   )
   //Destructure signature into 3 variables
   const { v, r, s } = fromRpcSig(signature)
   //Sends the message and the signature to the network and recover the account
-  const publicKey = ecrecover(toBuffer(prefixedMsg), v, r, s)
+  const publicKey = ecrecover(toBuffer(prefixedMessage), v, r, s)
   //Converts the buffer stream to hexadecimal
   const recoveredAddress = bufferToHex(pubToAddress(publicKey))
 
   if (recoveredAddress !== address) {
     return res.status(401).send()
   }
-
-  console.log(signature)
 
   const secret = "your secret in .env"
   const token = jwt.sign(recoveredAddress, secret)
